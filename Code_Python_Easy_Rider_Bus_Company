@@ -1,0 +1,226 @@
+import json
+import re
+from datetime import datetime as dt
+
+
+status = {"bus_id": 0, 'stop_id': 0, 'stop_name': 0, 'next_stop': 0, 'stop_type': 0, 'a_time': 0, 'all': 0}
+regex_stop_name = r"[A-Z][a-z]+ ?\w+? (Road|Avenue|Boulevard|Street)$"
+regex_stop_type = r"(S|O|F)?$"
+regex_a_time = r"[0-2]\d:[0-5]\d$"
+lines = dict()
+lines_SF = dict()
+start_stops = list()
+stops_vs_buses = dict()
+transfer_stops = list()
+finish_stops = list()
+od_stops = list()
+wrong_stops_od = list()
+lines_times = dict()
+lines_times_nok = dict()
+
+data = input() # input in json format of bus company database (example below)
+buses = json.loads(data)
+
+for bus in buses:
+    if not(isinstance(bus['bus_id'], int)):
+        status['bus_id'] += 1
+        status['all'] += 1
+    if not(isinstance(bus['stop_id'], int)):
+        status['stop_id'] += 1
+        status['all'] += 1
+    if not(isinstance(bus['stop_name'], str)):
+        status['stop_name'] += 1
+        status['all'] += 1
+    elif not(bool(bus['stop_name'].strip())):
+        status['stop_name'] += 1
+        status['all'] += 1
+    elif not(re.match(regex_stop_name, bus['stop_name'])):
+        status['stop_name'] += 1
+        status['all'] += 1
+    if not(isinstance(bus['next_stop'], int)):
+        status['next_stop'] += 1
+        status['all'] += 1
+    if not(isinstance(bus['stop_type'], str)):
+        status['stop_type'] += 1
+        status['all'] += 1
+    elif len(bus['stop_type']) > 1:
+        status['stop_type'] += 1
+        status['all'] += 1
+    elif not(re.match(regex_stop_type, bus['stop_type'])):
+        status['stop_type'] += 1
+        status['all'] += 1
+    if not(isinstance(bus['a_time'], str)):
+        status['a_time'] += 1
+        status['all'] += 1
+    elif not(bool(bus['a_time'].strip())):
+        status['a_time'] += 1
+        status['all'] += 1
+    elif not(re.match(regex_a_time, bus['a_time'])):
+        status['a_time'] += 1
+        status['all'] += 1
+    if bus['bus_id'] in lines.keys():
+        lines[bus['bus_id']] += 1
+    else:
+        lines[bus['bus_id']] = 1
+        lines_SF[bus['bus_id']] = ''
+    lines_SF[bus['bus_id']] += bus['stop_type']
+    if bus['stop_type'] == 'S':
+        if not(bus['stop_name'] in start_stops):
+            start_stops.append(bus['stop_name'])
+    elif bus['stop_type'] == 'F':
+        if not(bus['stop_name'] in finish_stops):
+            finish_stops.append(bus['stop_name'])
+    elif bus['stop_type'] == 'O':
+        if not(bus['stop_name'] in od_stops):
+            od_stops.append(bus['stop_name'])
+    if bus['stop_name'] in stops_vs_buses.keys():
+        stops_vs_buses[bus['stop_name']] += 1
+    else:
+        stops_vs_buses[bus['stop_name']] = 1
+    if not(bus['bus_id'] in lines_times.keys()):
+        lines_times[bus['bus_id']] = [[bus['a_time'], bus['stop_name']]]
+    else:
+        lines_times[bus['bus_id']].append([bus['a_time'], bus['stop_name']])
+
+
+for k, v in stops_vs_buses.items():
+    if v > 1:
+        transfer_stops.append(k)
+
+# syntax errors
+print('Type and required field validation: {} errors'.format(status['all']))
+for k, v in status.items():
+    if k != 'all':
+        print('{}: {}'.format(k, v))
+
+
+# lines stats
+print('Line names and number of stops:')
+for k, v in lines.items():
+    print('bus_id: {}, stops: {}'.format(k, v))
+
+
+# On demand stop errors
+for s in od_stops:
+    if s in (start_stops + transfer_stops + finish_stops):
+        wrong_stops_od.append(s)
+
+print('On demand stops test:')
+print('Wrong stop type:', sorted(wrong_stops_od)) if len(wrong_stops_od) > 0 else print('OK')
+
+
+# time incoherence detection
+for k, v in lines_times.items():
+    bef_time = dt.strptime('00:00', '%H:%M')
+    for t in v:
+        nex_time = dt.strptime(t[0], '%H:%M')
+        if nex_time < bef_time:
+            lines_times_nok[k] = t[1]
+            break
+        bef_time = nex_time
+
+print('Arrival time test:')
+if len(lines_times_nok) > 0:
+    for k, v in lines_times_nok.items():
+        print('bus_id line {}: wrong time on station {}'.format(k, v))
+else:
+    print('OK')
+
+
+# start, transfer and finish stats
+start_stops.sort()
+transfer_stops.sort()
+finish_stops.sort()
+for k, v in lines_SF.items():
+    if not('S' in v and 'F' in v):
+        print('There is no start or end stop for the line: {}.'.format(k))
+        break
+    else:
+        print('Start stops:', len(start_stops), start_stops)
+        print('Transfer stops:', len(transfer_stops), transfer_stops)
+        print('Finish stops:', len(finish_stops), finish_stops)
+        break
+
+# database example
+# [
+#     {
+#         "bus_id": 128,
+#         "stop_id": 1,
+#         "stop_name": "Prospekt Avenue",
+#         "next_stop": 3,
+#         "stop_type": "S",
+#         "a_time": "08:12"
+#     },
+#     {
+#         "bus_id": 128,
+#         "stop_id": 3,
+#         "stop_name": "Elm Street",
+#         "next_stop": 5,
+#         "stop_type": "O",
+#         "a_time": "08:19"
+#     },
+#     {
+#         "bus_id": 128,
+#         "stop_id": 5,
+#         "stop_name": "Fifth Avenue",
+#         "next_stop": 7,
+#         "stop_type": "O",
+#         "a_time": "08:25"
+#     },
+#     {
+#         "bus_id": 128,
+#         "stop_id": 7,
+#         "stop_name": "Sesame Street",
+#         "next_stop": 0,
+#         "stop_type": "F",
+#         "a_time": "08:37"
+#     },
+#     {
+#         "bus_id": 256,
+#         "stop_id": 2,
+#         "stop_name": "Pilotow Street",
+#         "next_stop": 3,
+#         "stop_type": "S",
+#         "a_time": "09:20"
+#     },
+#     {
+#         "bus_id": 256,
+#         "stop_id": 3,
+#         "stop_name": "Elm Street",
+#         "next_stop": 6,
+#         "stop_type": "",
+#         "a_time": "09:45"
+#     },
+#     {
+#         "bus_id": 256,
+#         "stop_id": 6,
+#         "stop_name": "Sunset Boulevard",
+#         "next_stop": 7,
+#         "stop_type": "O",
+#         "a_time": "09:59"
+#     },
+#     {
+#         "bus_id": 256,
+#         "stop_id": 7,
+#         "stop_name": "Sesame Street",
+#         "next_stop": 0,
+#         "stop_type": "F",
+#         "a_time": "10:12"
+#     },
+#     {
+#         "bus_id": 512,
+#         "stop_id": 4,
+#         "stop_name": "Bourbon Street",
+#         "next_stop": 6,
+#         "stop_type": "S",
+#         "a_time": "08:13"
+#     },
+#     {
+#         "bus_id": 512,
+#         "stop_id": 6,
+#         "stop_name": "Sunset Boulevard",
+#         "next_stop": 0,
+#         "stop_type": "F",
+#         "a_time": "08:16"
+#     }
+# ]
